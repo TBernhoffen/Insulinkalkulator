@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192">
+  <title>Insulin Dose Kalkulator (ICR/ISF)</title>
+  <style>
+    :root{
+      --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#475569; --accent:#0f172a; --border:#e2e8f0;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,'Noto Sans',sans-serif;}
+    .container{max-width:880px;margin:0 auto;padding:24px;}
+    h1{font-size:clamp(1.4rem, 2vw + 1rem, 2rem);margin:0 0 8px;}
+    p.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;color:var(--muted);font-size:.95rem}
+    .grid{display:grid;gap:16px;grid-template-columns:1fr;}
+    @media(min-width:900px){.grid{grid-template-columns:1fr 1fr;}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:16px;box-shadow:0 1px 3px rgba(2,8,23,.06),0 1px 2px rgba(2,8,23,.08)}
+    label{display:block;font-size:.9rem;color:var(--muted);margin-bottom:6px}
+    input,select,button{font:inherit}
+    input[type="text"], select{
+      width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;outline:none;
+    }
+    input[type="text"]:focus, select:focus{border-color:#cbd5e1;box-shadow:0 0 0 4px rgba(15,23,42,.08)}
+    .row{display:flex;align-items:baseline;justify-content:space-between;margin:6px 0}
+    .row .val{font-weight:600}
+    .muted{color:var(--muted)}
+    hr{border:none;border-top:1px solid var(--border);margin:8px 0}
+    .btn{padding:10px 14px;border-radius:12px;border:1px solid var(--border);background:#fff;cursor:pointer}
+    .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .chips{display:flex;gap:8px;flex-wrap:wrap}
+    .chip{padding:8px 10px;border-radius:999px;border:1px solid var(--border);background:#fff;cursor:pointer}
+    .chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .footer{font-size:.85rem;color:var(--muted);margin-top:16px}
+    .range-wrap{display:flex;gap:8px;align-items:center}
+    .range-wrap input[type="range"]{flex:1}
+    .big{font-size:1.25rem}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="card">
+      <h1>Insulin før måltid – ICR/ISF kalkulator</h1>
+      <p class="mono">Dose = (karbo / ICR) + (nåværende BG − mål BG) / ISF</p>
+      <div class="chips" id="unitChips">
+        <div class="chip active" data-unit="mmol">mmol/L</div>
+        <div class="chip" data-unit="mgdl">mg/dL</div>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card">
+        <div class="field">
+          <label>Karbohydrater i måltid (g)</label>
+          <input id="carbs" type="text" placeholder="f.eks. 60">
+        </div>
+        <div class="field">
+          <label>ICR – gram per enhet</label>
+          <input id="icr" type="text" placeholder="f.eks. 10">
+        </div>
+        <div class="field">
+          <label id="lblCur">Nåværende blodsukker (mmol/L)</label>
+          <input id="currentBG" type="text" placeholder="f.eks. 9">
+        </div>
+        <div class="field">
+          <label id="lblTar">Mål blodsukker (mmol/L)</label>
+          <input id="targetBG" type="text" value="6">
+        </div>
+        <div class="field">
+          <label id="lblIsf">ISF – hvor mye 1E senker (mmol/L)</label>
+          <input id="isf" type="text" placeholder="f.eks. 3">
+        </div>
+
+        <div class="field">
+          <label>Avrund til nærmeste</label>
+          <select id="roundStep">
+            <option value="0.1">0.1 E</option>
+            <option value="0.5" selected>0.5 E</option>
+            <option value="1">1.0 E</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Hurtigvalg</label>
+          <div class="chips">
+            <button class="chip" id="exa">Fyll inn eksempel</button>
+            <button class="chip" id="clr">Nullstill</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="resultCard">
+        <h3>Resultat</h3>
+        <div class="row"><div>Karbohydrat-del</div><div class="val" id="carbPart">–</div></div>
+        <div class="row"><div>Korreksjons-del</div><div class="val" id="corrPart">–</div></div>
+        <hr>
+        <div class="row"><div>Sum (u/avrunding)</div><div class="val" id="sumRaw">–</div></div>
+        <div class="row"><div id="roundLbl">Avrundet (trinn 0.5 E)</div><div class="val" id="sumRound">–</div></div>
+        <div class="field">
+          <label>Aktivitetsjustering (%) <span class="muted">(negativ verdi for planlagt aktivitet)</span></label>
+          <div class="range-wrap">
+            <input id="activity" type="range" min="-50" max="50" value="0">
+            <span class="muted" id="activityVal">0%</span>
+          </div>
+        </div>
+        <div class="row big"><div>Anbefalt dose</div><div class="val" id="dose">–</div></div>
+        <p class="footer">Merk: Dette er et hjelpemiddel, ikke medisinsk rådgivning. Bekreft ICR/ISF/mål BG med diabetesteam. Vurder IOB, matens fett/protein og pre‑bolus.</p>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const $ = (id)=>document.getElementById(id);
+    const state = {
+      unit:'mmol', // 'mmol' | 'mgdl'
+      carbs:'', icr:'', currentBG:'', targetBG:'6', isf:'', roundStep:0.5, activity:0
+    };
+
+    const fields = ['carbs','icr','currentBG','targetBG','isf'];
+    fields.forEach(k=>{
+      $(k).addEventListener('input', ()=>{ state[k]= $(k).value; calc(); save(); });
+    });
+    $('roundStep').addEventListener('change', ()=>{
+      state.roundStep = parseFloat($('roundStep').value);
+      $('roundLbl').textContent = `Avrundet (trinn ${state.roundStep} E)`;
+      calc(); save();
+    });
+    $('activity').addEventListener('input', ()=>{
+      state.activity = parseInt($('activity').value,10);
+      $('activityVal').textContent = `${state.activity}%`;
+      calc(); save();
+    });
+    $('exa').addEventListener('click', ()=>{
+      $('carbs').value = '60'; $('icr').value='10';
+      if(state.unit==='mmol'){ $('currentBG').value='9'; $('targetBG').value='6'; $('isf').value='3'; }
+      else{ $('currentBG').value='162'; $('targetBG').value='108'; $('isf').value='54'; }
+      fields.forEach(k=>{ state[k] = $(k).value; });
+      calc(); save();
+    });
+    $('clr').addEventListener('click', ()=>{
+      $('carbs').value=''; $('icr').value=''; $('currentBG').value=''; $('isf').value='';
+      $('targetBG').value = (state.unit==='mmol'?'6':'108');
+      fields.forEach(k=>{ state[k] = $(k).value; });
+      $('activity').value = 0; state.activity=0; $('activityVal').textContent='0%';
+      calc(); save();
+    });
+
+    // Unit chips
+    document.querySelectorAll('#unitChips .chip').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        document.querySelectorAll('#unitChips .chip').forEach(x=>x.classList.remove('active'));
+        el.classList.add('active');
+        state.unit = el.dataset.unit;
+        $('lblCur').textContent = `Nåværende blodsukker (${state.unit==='mmol'?'mmol/L':'mg/dL'})`;
+        $('lblTar').textContent = `Mål blodsukker (${state.unit==='mmol'?'mmol/L':'mg/dL'})`;
+        $('lblIsf').textContent = `ISF – hvor mye 1E senker (${state.unit==='mmol'?'mmol/L':'mg/dL'})`;
+        if($('targetBG').value==='' ) $('targetBG').value = (state.unit==='mmol'?'6':'108');
+        calc(); save();
+      });
+    });
+
+    function toNum(s){
+      if(!s) return null;
+      const t = s.replace(',','.');
+      const n = parseFloat(t);
+      return Number.isFinite(n)? n : null;
+    }
+    const toMmol = (v,unit)=> unit==='mgdl' ? v/18 : v;
+    const fmt = (n)=> Number.isFinite(n) ? (Math.round(n*100)/100).toString().replace(/\.?0+$/,'') : '–';
+    const roundTo = (v, step)=> step>0 ? Math.round(v/step)*step : v;
+
+    function calc(){
+      const C = toNum(state.carbs);
+      const ICR = toNum(state.icr);
+      const CB = toNum(state.currentBG);
+      const TB = toNum(state.targetBG);
+      const ISF = toNum(state.isf);
+      const valid = [C,ICR,CB,TB,ISF].every(x=>x!==null) && ICR>0 && ISF>0;
+      if(!valid){
+        ['carbPart','corrPart','sumRaw','sumRound','dose'].forEach(id=>$(id).textContent='–');
+        return;
+      }
+      const CBmm = toMmol(CB,state.unit);
+      const TBmm = toMmol(TB,state.unit);
+      const carbPart = C/ICR;
+      const corrPart = (CBmm - TBmm)/ISF;
+      const total = carbPart + corrPart;
+      const rounded = roundTo(total, state.roundStep);
+      const adjusted = rounded * (1 + state.activity/100);
+
+      $('carbPart').textContent = fmt(carbPart) + ' E';
+      $('corrPart').textContent = fmt(corrPart) + ' E';
+      $('sumRaw').textContent = fmt(total) + ' E';
+      $('sumRound').textContent = fmt(rounded) + ' E';
+      $('dose').textContent = fmt(adjusted) + ' E';
+    }
+
+    // PWA install
+    if('serviceWorker' in navigator){
+      window.addEventListener('load', ()=>{
+        navigator.serviceWorker.register('./service-worker.js');
+      });
+    }
+
+    // Persist simple state
+    const KEY='insulin_pwa_state_v1';
+    function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+    (function restore(){
+      const raw = localStorage.getItem(KEY);
+      if(!raw) { calc(); return; }
+      try{
+        const s = JSON.parse(raw);
+        Object.assign(state, s);
+        $('carbs').value = state.carbs||'';
+        $('icr').value = state.icr||'';
+        $('currentBG').value = state.currentBG||'';
+        $('targetBG').value = state.targetBG|| (state.unit==='mmol'?'6':'108');
+        $('isf').value = state.isf||'';
+        $('roundStep').value = String(state.roundStep||0.5);
+        $('roundLbl').textContent = `Avrundet (trinn ${state.roundStep||0.5} E)`;
+        $('activity').value = String(state.activity||0);
+        $('activityVal').textContent = `${state.activity||0}%`;
+        // unit chips
+        document.querySelectorAll('#unitChips .chip').forEach(x=>x.classList.remove('active'));
+        document.querySelector(`#unitChips .chip[data-unit="${state.unit}"]`)?.classList.add('active');
+        $('lblCur').textContent = `Nåværende blodsukker (${state.unit==='mmol'?'mmol/L':'mg/dL'})`;
+        $('lblTar').textContent = `Mål blodsukker (${state.unit==='mmol'?'mmol/L':'mg/dL'})`;
+        $('lblIsf').textContent = `ISF – hvor mye 1E senker (${state.unit==='mmol'?'mmol/L':'mg/dL'})`;
+      }catch(e){ console.warn(e); }
+      calc();
+    })();
+  </script>
+</body>
+</html>
